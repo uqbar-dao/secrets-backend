@@ -38,8 +38,7 @@ struct EthEvent {
 struct Bid {
     from: String, // .uq name
     amount: String,
-    messageHash: String,
-    time: u64,
+    block: String,
 }
 
 #[derive(Clone, Debug, Serialize, Deserialize)]
@@ -49,7 +48,7 @@ struct Secret {
     messageHash: String,
     topBid: Option<Bid>,
     secret: Option<String>,
-    time: u64,
+    block: String,
 }
 
 #[derive(Clone, Debug, Serialize, Deserialize)]
@@ -105,7 +104,7 @@ impl Guest for Component {
                 match bincode::deserialize::<State>(&p.bytes) {
                     Err(e) => print_to_terminal(
                         0,
-                        &format!("qns_indexer: failed to deserialize payload from fs: {}", e),
+                        &format!("secrets: failed to deserialize payload from fs: {}", e),
                     ),
                     Ok(s) => {
                         state = s;
@@ -156,7 +155,7 @@ impl Guest for Component {
                 continue;
             };
             let Message::Request(request) = message else {
-                print_to_terminal(0, "secrets: got unexpected message");
+                print_to_terminal(0, "secrets: got unexpected response");
                 continue;
             };
 
@@ -169,12 +168,12 @@ impl Guest for Component {
                 AllActions::EventSubscription(e) => {
                     match decode_hex(&e.topics[0].clone()) {
                         NewSecret::SIGNATURE_HASH => {
-                            print_to_terminal(0, "got new secret");
+                            print_to_terminal(0, "secrets: new secret");
                             let message_hash       = &e.topics[1];
                             let decoded    = NewSecret::decode_data(&decode_hex_to_vec(&e.data), true).unwrap();
                             let message = decoded.0;
                             let name = dnswire_decode(decoded.1);
-                            let time = e.blockNumber.parse::<u64>().unwrap();
+                            let block = e.blockNumber;
 
                             let secret = Secret {
                                 from: name,
@@ -182,13 +181,13 @@ impl Guest for Component {
                                 messageHash: message_hash.clone(),
                                 topBid: None,
                                 secret: None,
-                                time: time,
+                                block: block,
                             };
 
                             state.secrets.insert(message_hash.clone(), secret);
                         }
                         BidPlaced::SIGNATURE_HASH => {
-                            print_to_terminal(0, "new bid placed");
+                            print_to_terminal(0, "secrets: bid placed");
                             let message_hash    = &e.topics[1];
                             let from           = &e.topics[2];
                             let decoded    = BidPlaced::decode_data(&decode_hex_to_vec(&e.data), true).unwrap();
@@ -198,8 +197,7 @@ impl Guest for Component {
                             let bid = Bid {
                                 from: name,
                                 amount: amount.to_string(),
-                                messageHash: message_hash.clone(),
-                                time: e.blockNumber.parse::<u64>().unwrap(),
+                                block: e.blockNumber,
                             };
 
                             let secret = state.secrets.get_mut(&message_hash.clone()).unwrap();

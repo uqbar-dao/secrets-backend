@@ -4,7 +4,7 @@ use alloy_primitives::FixedBytes;
 use alloy_sol_types::{sol, SolEvent};
 use bindings::component::uq_process::types::*;
 use bindings::{
-    get_payload, print_to_terminal, receive, send_request,
+    get_payload, print_to_terminal, receive, send_request, send_response,
     Guest,
 };
 use serde::{Deserialize, Serialize};
@@ -140,9 +140,29 @@ impl Guest for Component {
                 metadata: None,
                 ipc: Some(serde_json::json!({
                     "action": "bind-app",
-                    "path": "/secrets",
+                    "path": "/secrets/feed",
                     "app": "secrets",
                     "authenticated": true,
+                }).to_string()),
+            },
+            None,
+            None,
+        );
+
+        let _bind_app_res = send_request(
+            &Address{
+                node: our.node.clone(),
+                process: ProcessId::Name("http_bindings".to_string()),
+            },
+            &Request{
+                inherit: false,
+                expects_response: None,
+                metadata: None,
+                ipc: Some(serde_json::json!({
+                    "action": "bind-app",
+                    "path": "/secrets/save-secret",
+                    "app": "secrets",
+                    "authenticated": false, // TODO true
                 }).to_string()),
             },
             None,
@@ -159,8 +179,84 @@ impl Guest for Component {
                 continue;
             };
 
-            let Ok(msg) = serde_json::from_str::<AllActions>(&request.ipc.unwrap_or_default()) else {
-                print_to_terminal(0, "qns_indexer: got invalid message");
+            if source.process == ProcessId::Name("http_bindings".to_string()) {
+                print_to_terminal(0, "secrets: got http request");
+                let Ok(ipc) = serde_json::from_str::<serde_json::Value>(&request.ipc.clone().unwrap_or_default()) else {
+                    print_to_terminal(0, "secrets: got invalid http request");
+                    continue;
+                };
+                if ipc["path"].as_str().unwrap_or_default() == "/secrets/feed" {
+                    let mut secrets = Vec::new();
+                    for (_, secret) in state.secrets.iter() { // TODO sort these by block
+                        secrets.push(json!({
+                            "message": secret.message,
+                            "messageHash": secret.messageHash,
+                            "from": secret.from,
+                            "topBid": secret.topBid,
+                            "secret": secret.secret,
+                            "block": secret.block,
+                        }));
+                    }
+                    let response = json!({
+                        "secrets": secrets,
+                    }).to_string();
+                    send_response(
+                        &Response {
+                            ipc: Some(serde_json::json!({
+                                "status": 200,
+                                "headers": {
+                                    "Content-Type": "application/json",
+                                },
+                            }).to_string()),
+                            metadata: None,
+                        },
+                        Some(&Payload {
+                            mime: Some("application/json".to_string()),
+                            bytes: response.as_bytes().to_vec(),
+                        })
+                    );
+                    continue;
+                } else if   ipc["path"].as_str().unwrap_or_default() == "/secrets/save-secret" &&
+                          ipc["method"].as_str().unwrap_or_default() == "POST" {
+                    let Some(payload) = get_payload() else {
+                        print_to_terminal(0, "secrets: got invalid http request1");
+                        continue;
+                    };
+                    let Ok(body) = serde_json::from_slice::<serde_json::Value>(&payload.bytes) else {
+                        print_to_terminal(0, "secrets: got invalid http request2");
+                        continue;
+                    };
+                    let Some(message) = body["message"].as_str() else {
+                        print_to_terminal(0, "secrets: got invalid http request3");
+                        continue;
+                    };
+                    let Some(secretToStore) = body["secret"].as_str() else {
+                        print_to_terminal(0, "secrets: got invalid http request4");
+                        continue;
+                    };
+                    state.mySecrets.insert(message.to_string(), secretToStore.to_string());
+                    print_to_terminal(0, "secrets: saved secret");
+                    send_response(
+                        &Response {
+                            ipc: Some(serde_json::json!({
+                                "status": 200,
+                                "headers": {
+                                    "Content-Type": "application/json",
+                                },
+                            }).to_string()),
+                            metadata: None,
+                        },
+                        Some(&Payload {
+                            mime: Some("application/json".to_string()),
+                            bytes: "success".to_string().as_bytes().to_vec(),
+                        })
+                    );
+                    continue;
+                }
+            }
+
+            let Ok(msg) = serde_json::from_str::<AllActions>(&request.ipc.clone().unwrap_or_default()) else {
+                print_to_terminal(0, "secrets: got invalid message");
                 continue;
             };
 

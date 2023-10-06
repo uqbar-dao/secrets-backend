@@ -1,0 +1,128 @@
+[
+    {
+        "issuer": {
+            "node": "drew.uq",
+            "process": "encryptor"
+        },
+        "params": "\"messaging\""
+    },
+    {
+        "issuer": {
+            "node": "drew.uq",
+            "process": "eth_rpc"
+        },
+        "params": "\"messaging\""
+    },
+    {
+        "issuer": {
+            "node": "drew.uq",
+            "process": "http_client"
+        },
+        "params": "\"messaging\""
+    },
+    {
+        "issuer": {
+            "node": "drew.uq",
+            "process": "http_bindings"
+        },
+        "params": "\"messaging\""
+    },
+    {
+        "issuer": {
+            "node": "drew.uq",
+            "process": "apps_home"
+        },
+        "params": "\"messaging\""
+    },
+    {
+        "issuer": {
+            "node": "drew.uq",
+            "process": "chess"
+        },
+        "params": "\"messaging\""
+    },
+    {
+        "issuer": {
+            "node": "drew.uq",
+            "process": "homepage"
+        },
+        "params": "\"messaging\""
+    },
+    {
+        "issuer": {
+            "node": "drew.uq",
+            "process": "orgs"
+        },
+        "params": "\"messaging\""
+    },
+    {
+        "issuer": {
+            "node": "drew.uq",
+            "process": "qns_indexer"
+        },
+        "params": "\"messaging\""
+    },
+    {
+        "issuer": {
+            "node": "drew.uq",
+            "process": "http_server"
+        },
+        "params": "\"messaging\""
+    },
+    {
+        "issuer": {
+            "node": "drew.uq",
+            "process": "vfs"
+        },
+        "params": "\"messaging\""
+    },
+    {
+        "issuer": {
+            "node": "drew.uq",
+            "process": "net"
+        },
+        "params": "\"messaging\""
+    },
+    {
+        "issuer": {
+            "node": "drew.uq",
+            "process": "rpc"
+        },
+        "params": "\"messaging\""
+    },
+    {
+        "issuer": {
+            "node": "drew.uq",
+            "process": "kernel"
+        },
+        "params": "\"network\""
+    },
+    {
+        "issuer": {
+            "node": "drew.uq",
+            "process": "kernel"
+        },
+        "params": "\"messaging\""
+    },
+    {
+        "issuer": {
+            "node": "drew.uq",
+            "process": "terminal"
+        },
+        "params": "\"messaging\""
+    },
+    {
+        "issuer": {
+            "node": "drew.uq",
+            "process": "http_proxy"
+        },
+        "params": "\"messaging\""
+    },
+    {
+        "issuer": {
+            "node": "drew.uq",
+            "process": "filesystem"
+        },
+        "params": "\"messaging\""
+    }
+]

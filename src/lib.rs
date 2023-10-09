@@ -244,6 +244,7 @@ impl Guest for Component {
                             Some(&Payload {
                                 mime: Some("text/html".to_string()),
                                 bytes: SECRETS_PAGE
+                                    .replace("${node}", our.node.as_str())
                                     .replace("${js}", SECRETS_JS)
                                     .replace("${css}", SECRETS_CSS)
                                     .to_string()
@@ -251,6 +252,7 @@ impl Guest for Component {
                                     .to_vec(),
                             })
                         );
+                        continue;
                 } else if ipc["path"].as_str().unwrap_or_default() == "/secrets/feed" {
                     let mut secrets = Vec::new();
                     for (_, secret) in state.secrets.iter() { // TODO sort these by block
@@ -259,13 +261,14 @@ impl Guest for Component {
                             "messageHash": secret.messageHash,
                             "from": secret.from,
                             "topBid": secret.topBid,
-                            "secret": if secret.from == our.node {
-                                if let Some(msg) = state.mySecrets.get(&secret.messageHash){ 
-                                    Some(msg.clone())
-                                } else { None }
-                            } else {
-                                secret.secret.clone()
-                            },
+                            "secret":
+                                if let Some(sec) = &secret.secret {
+                                    Some(sec.clone())
+                                } else if secret.from == our.node {
+                                    if let Some(msg) = state.mySecrets.get(&secret.messageHash){ 
+                                        Some(msg.clone())
+                                    } else { None }
+                                } else { None },
                             "block": secret.block,
                         }));
                     }
@@ -402,8 +405,13 @@ impl Guest for Component {
                             let decoded    = SecretRevealed::decode_data(&decode_hex_to_vec(&e.data), true).unwrap();
                             let revealed_message = decoded.0;
                             let name = dnswire_decode(decoded.1);
+                            
+                            print_to_terminal(0, &format!("secrets: REVEALED {}", revealed_message));
 
-                            let secret = state.secrets.get_mut(&message_hash.clone()).unwrap();
+                            let Some(mut secret) = state.secrets.get_mut(&message_hash.clone()) else {
+                                panic!("secrets: got secret revealed event for unknown secret"); // this should never happen
+                            };
+
                             secret.secret = Some(revealed_message);
                         }
                         event => {

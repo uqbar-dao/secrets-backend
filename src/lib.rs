@@ -18,7 +18,6 @@ struct Component;
 #[derive(Debug, Serialize, Deserialize)]
 enum AllActions {
     EventSubscription(EthEvent),
-    StoreSecret(String),
 }
 
 #[derive(Debug, Serialize, Deserialize)]
@@ -62,8 +61,8 @@ struct State {
 
 sol! {
     event NewSecret(bytes32 indexed messageHash, string message, bytes uqname);
-    event BidPlaced(bytes32 indexed messageHash, address indexed bidder, uint256 amount, bytes uqname);
-    event SecretRevealed(bytes32 indexed messageHash, address indexed who, string secret, bytes uqname);
+    event BidPlaced(bytes32 indexed messageHash, uint256 amount, bytes uqname);
+    event SecretRevealed(bytes32 indexed messageHash, string secret, bytes uqname);
 }
 
 fn subscribe_to_secrets(from_block: u64) -> String {
@@ -71,14 +70,14 @@ fn subscribe_to_secrets(from_block: u64) -> String {
         "SubscribeEvents": {
             "addresses": [
                 // Secrets on sepolia
-                "0x79c3e8Fe22579c7a00E9C1c2130a2F628D3D636D",
+                "0xfd571a1a8Ba4bAe58f5729aF52E2ED7277ed3DF2",
             ],
             "from_block": from_block,
             "to_block": null,
             "events": [
                 "NewSecret(bytes32,string,bytes)",
-                "BidPlaced(bytes32,address,uint256,bytes)",
-                "SecretRevealed(bytes32,address,string,bytes)",
+                "BidPlaced(bytes32,uint256,bytes)",
+                "SecretRevealed(bytes32,string,bytes)",
             ],
             "topic1": null,
             "topic2": null,
@@ -86,6 +85,10 @@ fn subscribe_to_secrets(from_block: u64) -> String {
         }
     }).to_string()
 }
+
+const SECRETS_PAGE: &str = include_str!("index.html");
+const SECRETS_JS: &str = include_str!("index.js");
+const SECRETS_CSS: &str = include_str!("index.css");
 
 impl Guest for Component {
     fn init(our: Address) {
@@ -140,6 +143,26 @@ impl Guest for Component {
                 metadata: None,
                 ipc: Some(serde_json::json!({
                     "action": "bind-app",
+                    "path": "/secrets",
+                    "app": "secrets",
+                    "authenticated": false, // TODO true
+                }).to_string()),
+            },
+            None,
+            None,
+        );
+
+        let _bind_app_res = send_request(
+            &Address{
+                node: our.node.clone(),
+                process: ProcessId::Name("http_bindings".to_string()),
+            },
+            &Request{
+                inherit: false,
+                expects_response: None,
+                metadata: None,
+                ipc: Some(serde_json::json!({
+                    "action": "bind-app",
                     "path": "/secrets/feed",
                     "app": "secrets",
                     "authenticated": true,
@@ -169,6 +192,26 @@ impl Guest for Component {
             None,
         );
 
+        let _bind_app_res = send_request(
+            &Address{
+                node: our.node.clone(),
+                process: ProcessId::Name("http_bindings".to_string()),
+            },
+            &Request{
+                inherit: false,
+                expects_response: None,
+                metadata: None,
+                ipc: Some(serde_json::json!({
+                    "action": "bind-app",
+                    "path": "/secrets/my-secrets",
+                    "app": "secrets",
+                    "authenticated": false, // TODO true
+                }).to_string()),
+            },
+            None,
+            None,
+        );
+
         loop {
             let Ok((source, message)) = receive() else {
                 print_to_terminal(0, "secrets: got network error");
@@ -185,7 +228,30 @@ impl Guest for Component {
                     print_to_terminal(0, "secrets: got invalid http request");
                     continue;
                 };
-                if ipc["path"].as_str().unwrap_or_default() == "/secrets/feed" {
+                print_to_terminal(0, &format!("{}", ipc.as_str().unwrap_or_default()));
+                if ipc["path"].as_str().unwrap_or_default() == "/secrets" &&
+                    ipc["method"].as_str().unwrap_or_default() == "GET" {
+                        send_response(
+                            &Response {
+                                ipc: Some(serde_json::json!({
+                                    "status": 200,
+                                    "headers": {
+                                        "Content-Type": "text/html",
+                                    },
+                                }).to_string()),
+                                metadata: None,
+                            },
+                            Some(&Payload {
+                                mime: Some("text/html".to_string()),
+                                bytes: SECRETS_PAGE
+                                    .replace("${js}", SECRETS_JS)
+                                    .replace("${css}", SECRETS_CSS)
+                                    .to_string()
+                                    .as_bytes()
+                                    .to_vec(),
+                            })
+                        );
+                } else if ipc["path"].as_str().unwrap_or_default() == "/secrets/feed" {
                     let mut secrets = Vec::new();
                     for (_, secret) in state.secrets.iter() { // TODO sort these by block
                         secrets.push(json!({
@@ -193,7 +259,13 @@ impl Guest for Component {
                             "messageHash": secret.messageHash,
                             "from": secret.from,
                             "topBid": secret.topBid,
-                            "secret": secret.secret,
+                            "secret": if secret.from == our.node {
+                                if let Some(msg) = state.mySecrets.get(&secret.messageHash){ 
+                                    Some(msg.clone())
+                                } else { None }
+                            } else {
+                                secret.secret.clone()
+                            },
                             "block": secret.block,
                         }));
                     }
@@ -216,7 +288,7 @@ impl Guest for Component {
                         })
                     );
                     continue;
-                } else if   ipc["path"].as_str().unwrap_or_default() == "/secrets/save-secret" &&
+                } else if ipc["path"].as_str().unwrap_or_default() == "/secrets/save-secret" &&
                           ipc["method"].as_str().unwrap_or_default() == "POST" {
                     let Some(payload) = get_payload() else {
                         print_to_terminal(0, "secrets: got invalid http request1");
@@ -234,6 +306,7 @@ impl Guest for Component {
                         print_to_terminal(0, "secrets: got invalid http request4");
                         continue;
                     };
+
                     state.mySecrets.insert(message.to_string(), secretToStore.to_string());
                     print_to_terminal(0, "secrets: saved secret");
                     send_response(
@@ -251,6 +324,31 @@ impl Guest for Component {
                             bytes: "success".to_string().as_bytes().to_vec(),
                         })
                     );
+                    process_lib::await_set_state(our.node.clone(), &state);
+                    continue;
+                } else if ipc["path"].as_str().unwrap_or_default() == "/secrets/my-secrets" &&
+                          ipc["method"].as_str().unwrap_or_default() == "GET" {
+                    print_to_terminal(0, "secrets: got my secrets");
+                    send_response(
+                        &Response {
+                            ipc: Some(serde_json::json!({
+                                "status": 200,
+                                "headers": {
+                                    "Content-Type": "application/json",
+                                },
+                            }).to_string()),
+                            metadata: None,
+                        },
+                        Some(&Payload {
+                            mime: Some("application/json".to_string()),
+                            bytes: json!(state.mySecrets).to_string().as_bytes().to_vec(),
+                        })
+                    );
+                    continue;
+                } else {
+                    print_to_terminal(0, "secrets: got invalid http request5");
+                    print_to_terminal(0, &format!("{}", ipc.as_str().unwrap_or_default()));
+                    // print_to_terminal(0, &format!("{}", ipc["method"].as_str().unwrap_or_default()));
                     continue;
                 }
             }
@@ -285,7 +383,6 @@ impl Guest for Component {
                         BidPlaced::SIGNATURE_HASH => {
                             print_to_terminal(0, "secrets: bid placed");
                             let message_hash    = &e.topics[1];
-                            let from           = &e.topics[2];
                             let decoded    = BidPlaced::decode_data(&decode_hex_to_vec(&e.data), true).unwrap();
                             let amount = decoded.0;
                             let name = dnswire_decode(decoded.1);
@@ -300,9 +397,8 @@ impl Guest for Component {
                             secret.topBid = Some(bid);
                         }
                         SecretRevealed::SIGNATURE_HASH => {
-                            print_to_terminal(0, "secret revealed");
+                            print_to_terminal(0, "secrets: secret revealed");
                             let message_hash   = &e.topics[1];
-                            let who           = &e.topics[2];
                             let decoded    = SecretRevealed::decode_data(&decode_hex_to_vec(&e.data), true).unwrap();
                             let revealed_message = decoded.0;
                             let name = dnswire_decode(decoded.1);
@@ -315,10 +411,8 @@ impl Guest for Component {
                         }
                     }
                 }
-                AllActions::StoreSecret(s) => {
-                    print_to_terminal(0, "store secret");
-                }
             }
+            process_lib::await_set_state(our.node.clone(), &state);
         }
     }
 }

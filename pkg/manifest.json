@@ -1,0 +1,15 @@
+[
+    {
+        "process_name": "secrets",
+        "process_wasm_path": "/secrets.wasm",
+        "on_panic": "Restart",
+        "request_networking": true,
+        "request_messaging": [
+            "http_bindings:http_bindings:uqbar",
+            "http_server:sys:uqbar",
+            "net:sys:uqbar",
+            "eth_rpc:sys:uqbar"
+        ],
+        "public": true
+    }
+]
